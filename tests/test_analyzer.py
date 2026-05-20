@@ -47,8 +47,8 @@ def test_secret_leak_does_not_print_secret_value():
         findings.extend(detect_secret_leak(s, cf.servers))
     raw_text = json.dumps([{"msg": f.message, "details": str(f.details)} for f in findings])
     leaked_substrings = [
-        "ghp_abc123DEF456ghi789JKL012mno345PQR678",
-        "sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "ghp_FIXTUREabc123DEF456ghi789JKL012mn01",
+        "sk-proj-FIXTUREaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "eyJhbGciOiJIUzI1NiJ9.fakefakefakefakefake.signaturepartheretoo",
     ]
     for needle in leaked_substrings:

@@ -17,8 +17,8 @@ def test_text_render_does_not_leak_secret(tmp_path, monkeypatch):
     result = run_audit(start=FIXTURES / "leaky")
     out = render_text(result)
     for secret in [
-        "ghp_abc123DEF456ghi789JKL012mno345PQR678",
-        "sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "ghp_FIXTUREabc123DEF456ghi789JKL012mn01",
+        "sk-proj-FIXTUREaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     ]:
         assert secret not in out, f"secret leaked to text output: {secret}"
 
@@ -31,8 +31,8 @@ def test_json_render_does_not_leak_secret(tmp_path, monkeypatch):
     parsed = json.loads(out)
     assert "findings" in parsed
     for secret in [
-        "ghp_abc123DEF456ghi789JKL012mno345PQR678",
-        "sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "ghp_FIXTUREabc123DEF456ghi789JKL012mn01",
+        "sk-proj-FIXTUREaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     ]:
         assert secret not in out, f"secret leaked to JSON output: {secret}"
 
@@ -42,8 +42,8 @@ def test_markdown_render_does_not_leak_secret(tmp_path, monkeypatch):
     result = run_audit(start=FIXTURES / "leaky")
     out = render_markdown(result)
     for secret in [
-        "ghp_abc123DEF456ghi789JKL012mno345PQR678",
-        "sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "ghp_FIXTUREabc123DEF456ghi789JKL012mn01",
+        "sk-proj-FIXTUREaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     ]:
         assert secret not in out, f"secret leaked to markdown output: {secret}"
 

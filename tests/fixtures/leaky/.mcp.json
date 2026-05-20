@@ -4,7 +4,7 @@
       "command": "npx",
       "args": ["@modelcontextprotocol/server-github"],
       "env": {
-        "GITHUB_TOKEN": "ghp_abc123DEF456ghi789JKL012mno345PQR678"
+        "GITHUB_TOKEN": "ghp_FIXTUREabc123DEF456ghi789JKL012mn01"
       },
       "allowed_tools": ["create_issue", "list_issues"]
     },
@@ -12,7 +12,7 @@
       "command": "node",
       "args": ["./bridge.js"],
       "env": {
-        "OPENAI_API_KEY": "sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "OPENAI_API_KEY": "sk-proj-FIXTUREaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       },
       "allowed_tools": ["complete"]
     },
