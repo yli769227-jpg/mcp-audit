@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "env": {
+        "DEBUG": "false"
+      },
+      "allowed_tools": ["read_file", "list_directory"]
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": ["mcp-server-fetch"],
+      "env": {
+        "API_KEY": "${MY_API_KEY}"
+      },
+      "allowed_tools": ["fetch_url"]
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_abc123DEF456ghi789JKL012mno345PQR678"
+      },
+      "allowed_tools": ["create_issue", "list_issues"]
+    },
+    "openai-bridge": {
+      "command": "node",
+      "args": ["./bridge.js"],
+      "env": {
+        "OPENAI_API_KEY": "sk-proj-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "allowed_tools": ["complete"]
+    },
+    "internal-api": {
+      "command": "python",
+      "args": ["-m", "internal_mcp"],
+      "env": {
+        "AUTH_HEADER": "Bearer eyJhbGciOiJIUzI1NiJ9.fakefakefakefakefake.signaturepartheretoo"
+      },
+      "allowed_tools": ["query"]
+    }
+  }
+}

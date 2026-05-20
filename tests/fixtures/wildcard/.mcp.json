@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "wide-open": {
+      "command": "npx",
+      "args": ["dangerous"],
+      "allowed_tools": "*"
+    },
+    "wide-open-list": {
+      "command": "npx",
+      "args": ["also-dangerous"],
+      "allowed_tools": ["*"]
+    },
+    "missing-allowed-tools": {
+      "command": "npx",
+      "args": ["dangerous-by-default"]
+    },
+    "scoped-ok": {
+      "command": "npx",
+      "args": ["safe"],
+      "allowed_tools": ["read_only_thing"]
+    }
+  }
+}

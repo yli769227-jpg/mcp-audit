@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "fresh-server": {
+      "command": "npx",
+      "args": ["fresh"],
+      "last_used": "2026-05-15T10:00:00Z",
+      "allowed_tools": ["x"]
+    },
+    "old-server": {
+      "command": "npx",
+      "args": ["old"],
+      "last_used": "2025-01-01T00:00:00Z",
+      "allowed_tools": ["x"]
+    },
+    "no-signal-server": {
+      "command": "npx",
+      "args": ["mystery"],
+      "allowed_tools": ["x"]
+    }
+  }
+}
