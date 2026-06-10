@@ -66,6 +66,26 @@ def test_text_render_on_clean_fixture(tmp_path, monkeypatch):
     assert "fetch" in out
 
 
+def test_summaries_show_info_count(tmp_path, monkeypatch):
+    """INFO findings (e.g. permission_scope no-config) must show in the
+    text/markdown summary line and the JSON by_severity block."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    # wildcard fixture's 'no permissions' servers produce INFO findings.
+    result = run_audit(start=FIXTURES / "wildcard")
+    info_count = sum(1 for f in result.findings if f.severity.value == "INFO")
+    assert info_count >= 1, "fixture should yield at least one INFO finding"
+
+    text_out = render_text(result)
+    assert f"{info_count} info" in text_out, text_out
+
+    md_out = render_markdown(result)
+    assert f"**{info_count}** info" in md_out, md_out
+
+    json_out = render_json(result)
+    parsed = json.loads(json_out)
+    assert parsed["summary"]["by_severity"]["INFO"] == info_count
+
+
 def test_json_summary_counts_match_findings(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     result = run_audit(start=FIXTURES / "leaky")

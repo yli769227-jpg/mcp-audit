@@ -10,8 +10,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from mcp_audit.analyzer import run_audit
 from mcp_audit.parser import parse_config_file
 from mcp_audit.rules import Severity
@@ -108,38 +106,106 @@ def test_secret_leak_ignores_env_var_references(tmp_path: Path):
     assert findings == [], findings
 
 
+def test_secret_leak_classifies_sk_ant_as_anthropic(tmp_path: Path):
+    """An sk-ant- key must be classified as anthropic_sk_ant, NOT openai_sk.
+
+    Regression guard: the openai pattern (^sk-...) also matches sk-ant-...,
+    so pattern ordering matters. We never print the value, only the pattern.
+    """
+    fixture = tmp_path / ".mcp.json"
+    fixture.write_text(
+        json.dumps({
+            "mcpServers": {
+                "anthropic-bridge": {
+                    "command": "x",
+                    "env": {
+                        "ANTHROPIC_API_KEY": "sk-ant-FIXTUREaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    },
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    cf = parse_config_file(fixture)
+    findings = list(detect_secret_leak(cf.servers[0], cf.servers))
+    assert findings, "expected a secret_leak finding for the sk-ant- key"
+    patterns = {f.details["pattern"] for f in findings}
+    assert "anthropic_sk_ant" in patterns, patterns
+    assert "openai_sk" not in patterns, patterns
+
+
 # ---------- permission_scope ----------
+#
+# The authoritative source is settings.json permissions.allow/deny, which the
+# analyzer aggregates onto each server. We drive these through run_audit (so
+# the aggregation actually happens) against the `permissions` fixture:
+#   - wide-server         : allowed wholesale via "mcp__wide-server"      -> WARN
+#   - scoped-server       : only "mcp__scoped-server__<tool>" entries     -> PASS
+#   - unconfigured-server : referenced nowhere in permissions             -> INFO
 
-@pytest.mark.parametrize(
-    "server_name,expected_severity",
-    [
-        ("wide-open", Severity.WARN),
-        ("wide-open-list", Severity.WARN),
-        # 'allowed_tools' is an mcp-audit extension convention, not an
-        # official Claude Code field — absence is INFO, not WARN, so that
-        # `--fail-on warn` CI gates don't fail on every real-world server.
-        ("missing-allowed-tools", Severity.INFO),
-        ("scoped-ok", None),
-    ],
-)
-def test_permission_scope(server_name: str, expected_severity: Severity | None):
+
+def _permission_findings_by_server(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))  # isolate from real ~/.claude
+    result = run_audit(start=FIXTURES / "permissions")
+    out: dict[str, list] = {}
+    for f in result.findings:
+        if f.rule == "permission_scope":
+            out.setdefault(f.server, []).append(f)
+    return out
+
+
+def test_permission_scope_whole_server_allowed_is_warn(tmp_path, monkeypatch):
+    by_server = _permission_findings_by_server(monkeypatch, tmp_path)
+    assert "wide-server" in by_server, by_server
+    f = by_server["wide-server"][0]
+    assert f.severity == Severity.WARN
+    assert "indiscriminately" in f.message
+    assert f.details["source"] == "permissions.allow"
+
+
+def test_permission_scope_scoped_server_passes(tmp_path, monkeypatch):
+    by_server = _permission_findings_by_server(monkeypatch, tmp_path)
+    # PASS = no permission_scope finding at all for this server.
+    assert "scoped-server" not in by_server, by_server.get("scoped-server")
+
+
+def test_permission_scope_unconfigured_server_is_info(tmp_path, monkeypatch):
+    by_server = _permission_findings_by_server(monkeypatch, tmp_path)
+    assert "unconfigured-server" in by_server, by_server
+    f = by_server["unconfigured-server"][0]
+    assert f.severity == Severity.INFO
+    assert "no explicit tool-permission" in f.message
+    assert "prompt" in f.message
+
+
+def test_permission_scope_wildcard_rule_is_warn(tmp_path, monkeypatch):
+    """An "mcp__<server>__*" wildcard in allow must WARN like a whole-server grant."""
+    proj = tmp_path / "proj"
+    (proj / ".claude").mkdir(parents=True)
+    (proj / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"star": {"command": "x"}}}), encoding="utf-8"
+    )
+    (proj / ".claude" / "settings.json").write_text(
+        json.dumps({"permissions": {"allow": ["mcp__star__*"], "deny": []}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    result = run_audit(start=proj)
+    perm = [f for f in result.findings if f.rule == "permission_scope" and f.server == "star"]
+    assert perm, result.findings
+    assert perm[0].severity == Severity.WARN
+
+
+def test_permission_scope_legacy_allowed_tools_wildcard_still_warns():
+    """Secondary signal: a wide-open non-official allowed_tools field still
+    WARNs even with no settings.json permissions present (isolated parse)."""
     cf = parse_config_file(FIXTURES / "wildcard" / ".mcp.json")
-    s = next(s for s in cf.servers if s.name == server_name)
-    findings = list(detect_permission_scope(s, cf.servers))
-    if expected_severity is not None:
-        assert findings, f"expected finding for {server_name}"
-        assert findings[0].severity == expected_severity
-    else:
-        assert findings == [], findings
-
-
-def test_permission_scope_missing_field_message_notes_extension():
-    """The INFO message must clarify allowed_tools is not an official field."""
-    cf = parse_config_file(FIXTURES / "wildcard" / ".mcp.json")
-    s = next(s for s in cf.servers if s.name == "missing-allowed-tools")
+    s = next(s for s in cf.servers if s.name == "wide-open")
     findings = list(detect_permission_scope(s, cf.servers))
     assert findings
-    assert "not an official Claude Code config field" in findings[0].message
+    assert findings[0].severity == Severity.WARN
+    assert "allowed_tools" in findings[0].message
 
 
 # ---------- dormant ----------
@@ -176,12 +242,16 @@ def test_dormant_silent_on_fresh_last_used(tmp_path: Path):
     assert findings == [], findings
 
 
-def test_dormant_unknown_when_no_signal():
+def test_dormant_info_when_no_signal():
+    """No reliable last-used source exists in real Claude Code, so the
+    honest answer for a server with no explicit last_used is INFO (not a
+    scary UNKNOWN/WARN), with a message explaining the limitation."""
     cf = parse_config_file(FIXTURES / "dormant" / ".mcp.json")
     no_sig = next(s for s in cf.servers if s.name == "no-signal-server")
     findings = list(detect_dormant(no_sig, cf.servers))
-    assert findings, "expected an UNKNOWN finding when no signal exists"
-    assert findings[0].severity == Severity.UNKNOWN
+    assert findings, "expected an INFO finding when no signal exists"
+    assert findings[0].severity == Severity.INFO
+    assert "cannot be determined" in findings[0].message
 
 
 # ---------- overlap ----------

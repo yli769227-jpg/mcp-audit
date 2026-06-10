@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "wide-server": {
+      "command": "npx",
+      "args": ["wide"]
+    },
+    "scoped-server": {
+      "command": "npx",
+      "args": ["scoped"]
+    },
+    "unconfigured-server": {
+      "command": "npx",
+      "args": ["unconfigured"]
+    }
+  }
+}

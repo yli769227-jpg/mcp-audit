@@ -1,24 +1,28 @@
 """Detect MCP servers that look dormant (>30 days unused).
 
-The MCP spec does NOT standardize "last used" anywhere. We try three signals,
-in order of confidence, and we are honest about UNKNOWN when none of them
-fire:
+HONESTY NOTE (best-effort by design):
+Claude Code does NOT record a reliable "last used" timestamp for MCP servers
+anywhere we can read. There is no documented per-server last-activity file
+under ``~/.claude/``. So this rule cannot truly measure dormancy in a normal
+install — it would be lying to claim otherwise.
 
-1. ``raw.last_used`` (ISO-8601 string) — if the user / Claude wrote it,
-   trust it.
-2. ``~/.claude/cache/mcp_<server>/last_activity`` mtime — best-effort
-   external signal.
-3. Nothing → severity UNKNOWN, message explains there's no way to tell.
+What we actually do:
 
-We deliberately do NOT silently say "looks fine" when we have no data — that
-would be lying to the user. UNKNOWN is a real status here.
+1. If the config carries an explicit ``last_used`` / ``lastUsed`` ISO-8601
+   string (an mcp-audit opt-in convention, or something a user/tooling
+   wrote), trust it and compute age → WARN when older than the threshold,
+   silent when fresh.
+2. Otherwise we have no signal → emit an INFO that honestly states dormancy
+   cannot be determined, rather than a scary UNKNOWN/WARN. The README
+   documents this as a best-effort limitation.
+
+We deliberately do NOT invent a filesystem signal that doesn't exist.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Iterable
 
 from ..parser import ServerEntry
@@ -42,37 +46,18 @@ def _parse_iso(value: str) -> datetime | None:
         return None
 
 
-def _cache_last_activity(server_name: str) -> datetime | None:
-    """Look for an external mtime signal under ~/.claude/cache/.
-
-    This is the ONLY filesystem read we do outside discovery, and it's still
-    confined to ~/.claude/.
-    """
-    candidates = [
-        Path.home() / ".claude" / "cache" / f"mcp_{server_name}" / "last_activity",
-        Path.home() / ".claude" / "cache" / "mcp" / server_name / "last_activity",
-    ]
-    for p in candidates:
-        try:
-            if p.is_file():
-                ts = p.stat().st_mtime
-                return datetime.fromtimestamp(ts, tz=timezone.utc)
-        except OSError as e:
-            log.warning("[dormant] cannot stat %s: %s", p, e)
-    return None
-
-
 def _last_seen(server: ServerEntry) -> tuple[datetime | None, str]:
-    """Return (timestamp, signal_name) or (None, 'none')."""
+    """Return (timestamp, signal_name) or (None, 'none').
+
+    The only signal we trust is an explicit ``last_used`` string in the
+    config. Claude Code exposes no reliable last-activity file, so we do not
+    pretend to read one.
+    """
     raw_last = server.raw.get("last_used") or server.raw.get("lastUsed")
     if isinstance(raw_last, str):
         dt = _parse_iso(raw_last)
         if dt is not None:
             return dt, "config.last_used"
-
-    dt = _cache_last_activity(server.name)
-    if dt is not None:
-        return dt, "cache.last_activity"
 
     return None, "none"
 
@@ -84,15 +69,20 @@ def detect_dormant(
     dt, signal = _last_seen(server)
 
     if dt is None:
-        log.info("[dormant] %s: no signal — UNKNOWN", server.name)
+        log.info(
+            "[dormant] %s: no last_used signal — INFO (best-effort limitation)",
+            server.name,
+        )
         yield Finding(
-            severity=Severity.UNKNOWN,
+            severity=Severity.INFO,
             rule="dormant",
             server=server.name,
             source_file=server.source_file,
             message=(
-                "no last-used signal available. MCP does not standardize this; "
-                "consider running `claude mcp list` or check the server's own logs."
+                "dormancy cannot be determined: Claude Code does not record a "
+                "reliable per-server last-used timestamp, and this config has "
+                "no explicit 'last_used' field. To check usage manually, run "
+                "`claude mcp list` or inspect the server's own logs."
             ),
             details={"signal": signal},
         )

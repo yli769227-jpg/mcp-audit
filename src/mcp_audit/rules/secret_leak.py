@@ -21,8 +21,12 @@ log = logging.getLogger("mcp_audit.rules.secret_leak")
 # Patterns are ordered most-specific first. Each entry is
 # (pattern_name, compiled_regex).
 _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("openai_sk", re.compile(r"^sk-[A-Za-z0-9_\-]{20,}$")),
+    # anthropic_sk_ant MUST precede openai_sk: the openai pattern
+    # (^sk-[A-Za-z0-9_\-]{20,}$) also matches "sk-ant-..." because "-" is in
+    # its char class, so an Anthropic key would be misclassified as openai_sk
+    # if openai came first. Most-specific prefix wins → list it first.
     ("anthropic_sk_ant", re.compile(r"^sk-ant-[A-Za-z0-9_\-]{20,}$")),
+    ("openai_sk", re.compile(r"^sk-[A-Za-z0-9_\-]{20,}$")),
     ("github_pat", re.compile(r"^ghp_[A-Za-z0-9]{20,}$")),
     ("github_oauth", re.compile(r"^gho_[A-Za-z0-9]{20,}$")),
     ("github_user", re.compile(r"^ghu_[A-Za-z0-9]{20,}$")),

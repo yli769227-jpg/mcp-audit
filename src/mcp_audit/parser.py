@@ -33,6 +33,13 @@ class ServerEntry:
     source_file: Path
     scope: str  # "user", "project", "local", "unknown"
     raw: dict[str, Any] = field(default_factory=dict)
+    # Aggregated tool-permission entries (from settings.json
+    # ``permissions.allow`` / ``permissions.deny`` across all discovered
+    # config files). Populated by the analyzer AFTER parsing — empty when a
+    # server is inspected in isolation (e.g. in a unit test). Each entry is a
+    # raw rule string like ``"mcp__github"`` or ``"mcp__github__create_issue"``.
+    allow_rules: list[str] = field(default_factory=list)
+    deny_rules: list[str] = field(default_factory=list)
 
     def get_command(self) -> str | None:
         return self.raw.get("command")
@@ -58,6 +65,24 @@ class ConfigFile:
     scope: str
     servers: list[ServerEntry] = field(default_factory=list)
     parse_error: str | None = None
+    # Tool-permission rules from this file's ``permissions.allow`` /
+    # ``permissions.deny`` (Claude Code settings.json). Strings are kept raw,
+    # e.g. "mcp__github", "mcp__github__create_issue", "Bash(*)".
+    allow_rules: list[str] = field(default_factory=list)
+    deny_rules: list[str] = field(default_factory=list)
+
+
+def _extract_permissions(data: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Pull ``permissions.allow`` / ``permissions.deny`` string lists out of a
+    settings.json-shaped dict. Tolerant: any unexpected shape yields []."""
+    perms = data.get("permissions")
+    if not isinstance(perms, dict):
+        return [], []
+    allow = [x for x in perms.get("allow", []) if isinstance(x, str)] \
+        if isinstance(perms.get("allow"), list) else []
+    deny = [x for x in perms.get("deny", []) if isinstance(x, str)] \
+        if isinstance(perms.get("deny"), list) else []
+    return allow, deny
 
 
 def _classify_scope(path: Path) -> str:
@@ -104,6 +129,19 @@ def parse_config_file(path: Path) -> ConfigFile:
     if not isinstance(data, dict):
         cf.parse_error = "top-level is not an object"
         return cf
+
+    # Tool permissions live under ``permissions.allow`` / ``permissions.deny``
+    # in settings.json / settings.local.json (and may co-exist with
+    # mcpServers). Extract them regardless of which server-shape branch we
+    # take below. ~/.claude.json uses a different (per-project) layout that we
+    # don't currently mine for permissions, so we skip it here.
+    if path.name != ".claude.json":
+        cf.allow_rules, cf.deny_rules = _extract_permissions(data)
+        if cf.allow_rules or cf.deny_rules:
+            log.info(
+                "[parser] %s: permissions allow=%d deny=%d",
+                path, len(cf.allow_rules), len(cf.deny_rules),
+            )
 
     # Special case: ~/.claude.json. Claude Code stores user-scope servers at
     # the top-level ``mcpServers`` and local-scope ones under

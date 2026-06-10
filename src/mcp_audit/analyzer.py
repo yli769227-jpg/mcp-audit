@@ -45,6 +45,26 @@ def run_audit(start: Path | None = None) -> AuditResult:
         len(result.servers), len(result.config_files),
     )
 
+    # Aggregate tool-permission rules (settings.json permissions.allow/deny)
+    # from ALL discovered config files and attach to every server, so the
+    # permission_scope rule — which only gets (server, all_servers) — can see
+    # the real Claude Code permission source regardless of which file it came
+    # from. Deduplicated, order-preserving.
+    all_allow: list[str] = []
+    all_deny: list[str] = []
+    for cf in result.config_files:
+        all_allow.extend(cf.allow_rules)
+        all_deny.extend(cf.deny_rules)
+    all_allow = list(dict.fromkeys(all_allow))
+    all_deny = list(dict.fromkeys(all_deny))
+    log.info(
+        "[analyzer] aggregated permissions: allow=%d deny=%d",
+        len(all_allow), len(all_deny),
+    )
+    for server in result.servers:
+        server.allow_rules = all_allow
+        server.deny_rules = all_deny
+
     rules = all_rules()
     for server in result.servers:
         for rule_name, rule_fn in rules:

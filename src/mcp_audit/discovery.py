@@ -1,8 +1,17 @@
 """Find MCP config files on disk.
 
-Hard rule: we ONLY look in ``~/.claude/``, ``~/.claude.json`` and the
-explicit ``cwd`` argument (plus up to 5 ancestor dirs of cwd). We never read
-``~/.ssh/``, ``~/.aws/``, etc. — see CLAUDE.md / project spec.
+Scan scope (documented in README "What it scans"):
+
+- ``~/.claude.json`` and the known files under ``~/.claude/``
+  (mcp.json / settings.json / settings.local.json).
+- The start directory (cwd or ``--path``) AND up to 5 ancestor directories,
+  looking for ``.mcp.json`` and ``.claude/settings*.json`` at each level.
+
+Walking ancestors mirrors Claude Code's own behaviour: it reads a project's
+``.mcp.json`` from parent directories, so a config that actually affects the
+session can live above cwd. We only ever look for these specific MCP-related
+filenames — we never read ``~/.ssh/``, ``~/.aws/``, or any other unrelated
+file. The set of filenames is fixed in the tuples below.
 """
 
 from __future__ import annotations

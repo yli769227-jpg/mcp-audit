@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -67,6 +66,7 @@ def render_text(result: AuditResult, console: Console | None = None) -> str:
         f"[bold]{result.server_count}[/bold] MCP server(s) | "
         f"[bold red]{sev_counts[Severity.CRITICAL]} critical[/bold red] | "
         f"[bold yellow]{sev_counts[Severity.WARN]} warn[/bold yellow] | "
+        f"[cyan]{sev_counts[Severity.INFO]} info[/cyan] | "
         f"[dim]{sev_counts[Severity.UNKNOWN]} unknown[/dim]"
     )
     console.print(Panel(summary, title="mcp-audit", expand=False))
@@ -190,6 +190,7 @@ def render_markdown(result: AuditResult) -> str:
         f"**{result.server_count}** MCP server(s) · "
         f"**{sev_counts[Severity.CRITICAL]}** critical · "
         f"**{sev_counts[Severity.WARN]}** warn · "
+        f"**{sev_counts[Severity.INFO]}** info · "
         f"**{sev_counts[Severity.UNKNOWN]}** unknown"
     )
     lines.append("")

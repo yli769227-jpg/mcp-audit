@@ -1,5 +1,7 @@
 # mcp-audit
 
+[![test](https://github.com/yli769227-jpg/mcp-audit/actions/workflows/test.yml/badge.svg)](https://github.com/yli769227-jpg/mcp-audit/actions/workflows/test.yml)
+
 > 你装了多少个 MCP server？还有几个能用？哪个偷偷在泄漏 key？
 >
 > *How many MCP servers did you install? How many still work? Which one is quietly leaking a key?*
@@ -24,8 +26,24 @@ Coding agents quietly install MCP servers for you. A year later you have 12 of t
   *Never writes to any config file — read-only.*
 - **不联网** — 所有规则离线。
   *No network — every rule is offline.*
-- **不扫 MCP 之外的目录** —— `~/.ssh/`、`~/.aws/` 一律不碰。
-  *Never scans outside `~/.claude/` and your explicit project directory.*
+- **只读 MCP 相关文件，不碰其它** —— 只查固定的几个文件名（`~/.claude.json`、`~/.claude/` 下的 `mcp.json`/`settings.json`/`settings.local.json`、以及项目目录的 `.mcp.json` 和 `.claude/settings*.json`），`~/.ssh/`、`~/.aws/` 一律不碰。
+  *Only reads a fixed set of MCP-related filenames; never touches `~/.ssh/`, `~/.aws/`, or anything else.*
+
+---
+
+## What it scans / 扫描范围
+
+mcp-audit 只查下面这几处固定位置的 MCP 配置，**不会**遍历整个磁盘：
+
+mcp-audit only reads MCP config from these fixed locations — it never walks your whole disk:
+
+- `~/.claude.json`（Claude Code 主状态文件：user-scope 在顶层 `mcpServers`，local-scope 在 `projects.<path>.mcpServers`）。
+- `~/.claude/` 下的 `mcp.json`、`settings.json`、`settings.local.json`。
+- 起始目录（cwd 或 `--path`）**以及最多 5 层父目录**里的 `.mcp.json` 和 `.claude/settings*.json`。
+
+向上遍历父目录是**有意为之**：Claude Code 本身就会从父目录读取项目的 `.mcp.json`，所以一个真正生效的配置可能在 cwd 之上。我们只匹配上面列出的几个文件名，绝不读取其它无关文件。
+
+Walking up to 5 ancestor directories is **intentional**: Claude Code itself reads a project's `.mcp.json` from parent directories, so a config that actually affects your session can live above cwd. Only the filenames listed above are ever matched.
 
 ---
 
@@ -72,45 +90,30 @@ For CI integration, `--fail-on critical` (default) or `--fail-on warn` makes the
 
 下面是一个真实命中的扫描结果（fixture 数据，不是真密钥）：
 
-Below is a real scan against a fixture with 1 critical + 2 warns:
+Below is a real scan (1 critical + 2 warn + 1 info):
 
 ```text
-╭─────────────────────────── mcp-audit ────────────────────────────╮
-│ 2 config file(s) | 4 MCP server(s) | 1 critical | 2 warn | 1 unknown │
-╰──────────────────────────────────────────────────────────────────╯
-              Discovered config files
-┏━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━┓
-┃ Scope ┃ Path                        ┃ Servers ┃ Notes ┃
-┡━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━┩
-│ user  │ ~/.claude/settings.json     │ 3       │       │
-│ proj  │ ./.mcp.json                 │ 1       │       │
-└───────┴─────────────────────────────┴─────────┴───────┘
+╭───────────────────── mcp-audit ─────────────────────╮
+│ 2 config file(s) | 3 MCP server(s) | 1 critical |    │
+│ 1 warn | 2 info | 0 unknown                          │
+╰──────────────────────────────────────────────────────╯
 
-                              MCP servers
-┏━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Name        ┃ Scope ┃ Command                 ┃ Source                    ┃
-┡━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-┃ github      ┃ user  ┃ npx @modelctx/github    ┃ ~/.claude/settings.json   ┃
-┃ filesystem  ┃ user  ┃ npx @modelctx/fs        ┃ ~/.claude/settings.json   ┃
-┃ legacy-bot  ┃ user  ┃ /usr/local/bin/legacy   ┃ ~/.claude/settings.json   ┃
-┃ github      ┃ proj  ┃ npx @modelctx/github    ┃ ./.mcp.json               ┃
-└─────────────┴───────┴─────────────────────────┴───────────────────────────┘
-
-                                 Findings
-┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Sev           ┃ Rule               ┃ Server    ┃ Message                         ┃
-┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ ✗ CRITICAL    │ secret_leak        │ github    │ possible hard-coded credential  │
-│               │                    │           │ in field 'env.GITHUB_TOKEN'     │
-│               │                    │           │ (github_pat, 40 chars). Use     │
-│               │                    │           │ ${YOUR_API_KEY} instead.        │
-│ ! WARN        │ overlap            │ github    │ defined in 2 places (user +     │
-│               │                    │           │ proj). local > project > user   │
-│               │                    │           │ wins; the other is shadowed.    │
-│ ! WARN        │ permission_scope   │ legacy-bot│ 'allowed_tools' contains '*' —  │
-│               │                    │           │ all tools allowed.              │
-│ ? UNKNOWN     │ dormant            │ filesystem│ no last-used signal available.  │
-└───────────────┴────────────────────┴───────────┴─────────────────────────────────┘
+                          Findings
+┏━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Sev           ┃ Rule               ┃ Server     ┃ Message                       ┃
+┡━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ ✗ CRITICAL    │ secret_leak        │ github     │ hard-coded credential in      │
+│               │                    │            │ 'env.GITHUB_TOKEN'            │
+│               │                    │            │ (github_pat, 39 chars).       │
+│ ! WARN        │ permission_scope   │ github     │ every tool of 'github' is     │
+│               │                    │            │ allowed indiscriminately via  │
+│               │                    │            │ permissions rule 'mcp__github'│
+│ i INFO        │ permission_scope   │ legacy-bot │ no explicit tool-permission   │
+│               │                    │            │ entry — Claude Code prompts   │
+│               │                    │            │ each call.                    │
+│ i INFO        │ dormant            │ filesystem │ dormancy cannot be determined │
+│               │                    │            │ (best-effort; no last_used).  │
+└───────────────┴────────────────────┴────────────┴───────────────────────────────┘
 ```
 
 完整 demo 见 [examples/sample-output.md](examples/sample-output.md)。
@@ -123,10 +126,10 @@ Full demo with all four rule categories in [examples/sample-output.md](examples/
 
 | Rule | Severity | What it catches |
 |---|---|---|
-| `secret_leak` | CRITICAL | Hard-coded `sk-...`, `sk-ant-...`, `ghp_...`, `Bearer ...`, AWS keys, JWTs, plus heuristic catch of long opaque strings in `api_key`/`token`/`secret` fields. |
+| `secret_leak` | CRITICAL / WARN | 正则精确命中（`sk-...`、`sk-ant-...`、`ghp_...`、`Bearer ...`、AWS key、JWT、URL 里的凭证等）→ **CRITICAL**；仅靠"字段名像密钥 + 值是长不透明串"的启发式命中 → **WARN**（信号较弱）。*Exact regex match (`sk-...`, `sk-ant-...`, `ghp_...`, `Bearer ...`, AWS keys, JWTs, URL-embedded creds) → CRITICAL; the softer heuristic (secret-looking field name + long opaque value) → WARN.* |
 | `permission_scope` | WARN / INFO | `allowed_tools` is `"*"` or empty (WARN), or missing (INFO) — every tool the server advertises is callable. 注意：`allowed_tools` 是 mcp-audit 的扩展约定，不是 Claude Code 官方配置字段，因此"字段缺失"只报 INFO，不会让 `--fail-on warn` 的 CI 恒失败。*Note: `allowed_tools` is an mcp-audit extension convention, not an official Claude Code field, so the missing-field case is INFO only and won't permanently fail a `--fail-on warn` CI gate.* |
 | `overlap` | WARN | Same server name defined in multiple scopes (user / project / local) — silent shadowing. |
-| `dormant` | WARN / UNKNOWN | Last activity > 30 days ago, judged via `last_used` field or `~/.claude/cache/mcp_<name>/last_activity` mtime. MCP doesn't standardize this, so UNKNOWN is a real answer. |
+| `dormant` | WARN / INFO | **Best-effort.** Claude Code records no reliable per-server last-used timestamp, so this rule can only act on an explicit `last_used` field in the config: older than 30 days → WARN; fresh → silent. With no such field it emits an **INFO** honestly stating dormancy can't be determined (run `claude mcp list` to check manually). |
 
 ---
 

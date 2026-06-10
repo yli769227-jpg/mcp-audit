@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__wide-server",
+      "mcp__scoped-server__read_file",
+      "mcp__scoped-server__list_dir",
+      "Bash(ls:*)"
+    ],
+    "deny": []
+  }
+}
