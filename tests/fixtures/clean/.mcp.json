@@ -2,19 +2,31 @@
   "mcpServers": {
     "filesystem": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/tmp"
+      ],
       "env": {
         "DEBUG": "false"
       },
-      "allowed_tools": ["read_file", "list_directory"]
+      "allowed_tools": [
+        "read_file",
+        "list_directory"
+      ]
     },
     "fetch": {
       "command": "uvx",
-      "args": ["mcp-server-fetch"],
+      "args": [
+        "mcp-server-fetch"
+      ],
       "env": {
-        "API_KEY": "${MY_API_KEY}"
+        "API_KEY": "${MY_API_KEY}",
+        "TOKEN": "${PRODUCTION_API_KEY_2026}"
       },
-      "allowed_tools": ["fetch_url"]
+      "allowed_tools": [
+        "fetch_url"
+      ]
     }
   }
 }

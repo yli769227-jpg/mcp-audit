@@ -1,8 +1,10 @@
 """Detect same-named MCP server defined in multiple scopes.
 
 If a server named ``foo`` exists in both ``~/.claude/settings.json`` and a
-project's ``.mcp.json``, the project copy will shadow the user copy. This is
-usually intentional but easy to lose track of, so we WARN once per server.
+project's ``.mcp.json``, the project copy will shadow the user copy — Claude
+Code resolves same-named servers with precedence local > project > user.
+This is usually intentional but easy to lose track of, so we WARN once per
+server.
 
 We attach the finding to the *first* occurrence so we don't double-report.
 """
@@ -44,7 +46,7 @@ def detect_overlap(
         source_file=server.source_file,
         message=(
             f"server '{server.name}' is defined in {len(same_name)} places. "
-            "The narrower scope (project > local > user) wins; "
+            "The higher-precedence scope (local > project > user) wins; "
             "the others are shadowed and silently ignored."
         ),
         details={"locations": locations},

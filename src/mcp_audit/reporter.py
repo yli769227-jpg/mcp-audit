@@ -16,8 +16,26 @@ from rich.text import Text
 
 from .analyzer import AuditResult
 from .rules import Finding, Severity
+from .rules.secret_leak import value_matches_secret_pattern
 
 log = logging.getLogger("mcp_audit.reporter")
+
+
+def _redact_args(args: list[str]) -> list[str]:
+    """Replace any arg element that looks like a credential with ***(N chars).
+
+    HARD RULE: reports must never contain a secret value, including secrets
+    smuggled in via ``args``. We reuse the secret_leak detection so the rule
+    and the redaction can never drift apart.
+    """
+    redacted: list[str] = []
+    for a in args:
+        if isinstance(a, str) and value_matches_secret_pattern(a):
+            log.info("[reporter] redacting credential-looking arg (%d chars)", len(a))
+            redacted.append(f"***({len(a)} chars)")
+        else:
+            redacted.append(a)
+    return redacted
 
 
 _SEV_STYLE = {
@@ -81,7 +99,7 @@ def render_text(result: AuditResult, console: Console | None = None) -> str:
         srv_table.add_column("Source", style="dim", overflow="fold")
         for s in result.servers:
             cmd = s.get_command() or "(none)"
-            args = " ".join(s.get_args())
+            args = " ".join(_redact_args(s.get_args()))
             full_cmd = f"{cmd} {args}".strip()
             srv_table.add_row(
                 s.name, s.scope, full_cmd, str(_short_path(s.source_file)),
@@ -140,7 +158,7 @@ def render_json(result: AuditResult) -> str:
                 "scope": s.scope,
                 "source_file": str(s.source_file),
                 "command": s.get_command(),
-                "args": s.get_args(),
+                "args": _redact_args(s.get_args()),
             }
             for s in result.servers
         ],
@@ -196,7 +214,7 @@ def render_markdown(result: AuditResult) -> str:
         lines.append("|---|---|---|---|")
         for s in result.servers:
             cmd = s.get_command() or "(none)"
-            args = " ".join(s.get_args())
+            args = " ".join(_redact_args(s.get_args()))
             full = f"`{cmd} {args}`".strip()
             lines.append(
                 f"| **{s.name}** | {s.scope} | {full} | `{_short_path(s.source_file)}` |"

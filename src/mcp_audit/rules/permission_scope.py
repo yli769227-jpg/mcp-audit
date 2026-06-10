@@ -3,6 +3,11 @@
 If ``allowed_tools`` is ``"*"``, ``["*"]``, an empty list, or absent
 entirely, the server can expose any tool name it wants to Claude. That's the
 default in many setups, but it's worth telling the user.
+
+NOTE: ``allowed_tools`` is mcp-audit's own opt-in convention, not an
+official Claude Code config field. Real-world configs almost never set it,
+so the "field missing" case is reported as INFO (not WARN) — otherwise every
+server would fail a ``--fail-on warn`` CI gate.
 """
 
 from __future__ import annotations
@@ -39,15 +44,23 @@ def detect_permission_scope(
     if not _is_wildcard(allowed):
         return
 
+    severity = Severity.WARN
     if allowed is None:
-        explanation = "no 'allowed_tools' field set — every tool the server advertises is callable"
+        # 'allowed_tools' is an mcp-audit extension convention, not an
+        # official Claude Code field — its absence is normal, so INFO only.
+        severity = Severity.INFO
+        explanation = (
+            "no 'allowed_tools' field set — every tool the server advertises is callable. "
+            "Note: 'allowed_tools' is an mcp-audit extension convention, "
+            "not an official Claude Code config field"
+        )
     elif allowed == "*" or (isinstance(allowed, list) and any(i == "*" for i in allowed)):
         explanation = "'allowed_tools' contains '*' — all tools allowed"
     else:
         explanation = "'allowed_tools' is empty — defaults to all tools allowed"
 
     yield Finding(
-        severity=Severity.WARN,
+        severity=severity,
         rule="permission_scope",
         server=server.name,
         source_file=server.source_file,

@@ -31,10 +31,13 @@ Coding agents quietly install MCP servers for you. A year later you have 12 of t
 
 ## Install / 安装
 
+> 尚未发布到 PyPI——PyPI 发布前请用 git 安装。
+> *Not yet published to PyPI — until then, install from git.*
+
 ```bash
-pipx install mcp-audit
+pipx install git+https://github.com/yli769227-jpg/mcp-audit
 # or
-pip install mcp-audit
+pip install git+https://github.com/yli769227-jpg/mcp-audit
 ```
 
 Python 3.11+。依赖只有 `click` 和 `rich`，无大依赖。
@@ -102,8 +105,8 @@ Below is a real scan against a fixture with 1 critical + 2 warns:
 │               │                    │           │ (github_pat, 40 chars). Use     │
 │               │                    │           │ ${YOUR_API_KEY} instead.        │
 │ ! WARN        │ overlap            │ github    │ defined in 2 places (user +     │
-│               │                    │           │ proj). Narrower scope wins; the │
-│               │                    │           │ other is shadowed.              │
+│               │                    │           │ proj). local > project > user   │
+│               │                    │           │ wins; the other is shadowed.    │
 │ ! WARN        │ permission_scope   │ legacy-bot│ 'allowed_tools' contains '*' —  │
 │               │                    │           │ all tools allowed.              │
 │ ? UNKNOWN     │ dormant            │ filesystem│ no last-used signal available.  │
@@ -121,7 +124,7 @@ Full demo with all four rule categories in [examples/sample-output.md](examples/
 | Rule | Severity | What it catches |
 |---|---|---|
 | `secret_leak` | CRITICAL | Hard-coded `sk-...`, `sk-ant-...`, `ghp_...`, `Bearer ...`, AWS keys, JWTs, plus heuristic catch of long opaque strings in `api_key`/`token`/`secret` fields. |
-| `permission_scope` | WARN | `allowed_tools` is `"*"`, empty, or missing — every tool the server advertises is callable. |
+| `permission_scope` | WARN / INFO | `allowed_tools` is `"*"` or empty (WARN), or missing (INFO) — every tool the server advertises is callable. 注意：`allowed_tools` 是 mcp-audit 的扩展约定，不是 Claude Code 官方配置字段，因此"字段缺失"只报 INFO，不会让 `--fail-on warn` 的 CI 恒失败。*Note: `allowed_tools` is an mcp-audit extension convention, not an official Claude Code field, so the missing-field case is INFO only and won't permanently fail a `--fail-on warn` CI gate.* |
 | `overlap` | WARN | Same server name defined in multiple scopes (user / project / local) — silent shadowing. |
 | `dormant` | WARN / UNKNOWN | Last activity > 30 days ago, judged via `last_used` field or `~/.claude/cache/mcp_<name>/last_activity` mtime. MCP doesn't standardize this, so UNKNOWN is a real answer. |
 

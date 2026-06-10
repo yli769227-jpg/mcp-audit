@@ -23,6 +23,12 @@
         "AUTH_HEADER": "Bearer eyJhbGciOiJIUzI1NiJ9.fakefakefakefakefake.signaturepartheretoo"
       },
       "allowed_tools": ["query"]
+    },
+    "args-and-url-leaker": {
+      "command": "npx",
+      "args": ["@example/remote-mcp", "--token", "ghp_FIXTUREargsTOKEN999aaaBBBcccDDDee02"],
+      "url": "https://svc-user:FIXTUREurlPass123456@mcp.example.com/sse?apikey=FIXTUREqueryKEY42abcdef",
+      "allowed_tools": ["call"]
     }
   }
 }

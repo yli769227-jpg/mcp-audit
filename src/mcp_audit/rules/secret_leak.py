@@ -47,8 +47,21 @@ _SECRET_FIELD_HINTS = {
 }
 
 
+# Pure env-var references are the *recommended* way to configure secrets,
+# so they must never be flagged: "${PRODUCTION_API_KEY_2026}" or "$MY_KEY".
+_ENV_REF_RE = re.compile(r"^\$[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _is_env_placeholder(value: str) -> bool:
+    if value.startswith("${") and value.endswith("}"):
+        return True
+    return bool(_ENV_REF_RE.match(value))
+
+
 def _looks_like_long_opaque(value: str) -> bool:
     """Soft heuristic: 20+ chars, not whitespace-y, has both letters & digits."""
+    if _is_env_placeholder(value):
+        return False
     if len(value) < 20 or len(value) > 4096:
         return False
     if any(c.isspace() for c in value):
@@ -58,10 +71,27 @@ def _looks_like_long_opaque(value: str) -> bool:
     return has_alpha and has_digit
 
 
+def value_matches_secret_pattern(value: str) -> bool:
+    """Reusable check: does this string look like a credential?
+
+    True when a strong pattern matches OR the value is a long opaque string.
+    Used by the reporter to redact args before printing — callers must only
+    ever output field name + char count, never the value itself.
+    """
+    if _is_env_placeholder(value):
+        return False
+    for _name, pat in _PATTERNS:
+        if pat.match(value):
+            return True
+    return _looks_like_long_opaque(value)
+
+
 def _scan_value(field_path: str, value: object) -> list[tuple[str, str, int]]:
     """Return list of (field_path, pattern_name, char_count) matches."""
     if not isinstance(value, str):
         return []
+    if _is_env_placeholder(value):
+        return []  # ${ENV_VAR} / $ENV_VAR references are the recommended style
     hits: list[tuple[str, str, int]] = []
     for name, pat in _PATTERNS:
         if pat.match(value):
@@ -86,6 +116,39 @@ def _walk(prefix: str, node: object) -> Iterable[tuple[str, str, int]]:
         yield from _scan_value(prefix, node)
 
 
+# Credential embedded as URL userinfo: scheme://user:PASSWORD@host
+_URL_USERINFO_RE = re.compile(r"://[^/@]*:([^@]+)@")
+
+# Query parameter names that commonly carry credentials.
+_SENSITIVE_QUERY_PARAMS = {"token", "key", "secret", "apikey"}
+
+
+def _check_url(url: object) -> list[tuple[str, str, int]]:
+    """Dedicated URL inspection. Returns (field_path, pattern_name, char_count).
+
+    We never report any part of the URL value itself — only which component
+    (userinfo password / query param name) looked like a credential and how
+    many characters it has.
+    """
+    if not isinstance(url, str) or _is_env_placeholder(url):
+        return []
+    hits: list[tuple[str, str, int]] = []
+
+    m = _URL_USERINFO_RE.search(url)
+    if m:
+        hits.append(("url", "url_userinfo_credential", len(m.group(1))))
+
+    # Query params: token/key/secret/apikey with a non-placeholder value.
+    query = url.split("?", 1)[1] if "?" in url else ""
+    for pair in query.split("&"):
+        if "=" not in pair:
+            continue
+        param, _, value = pair.partition("=")
+        if param.lower() in _SENSITIVE_QUERY_PARAMS and value and not _is_env_placeholder(value):
+            hits.append((f"url?{param}", "url_sensitive_query_param", len(value)))
+    return hits
+
+
 def _line_number_of_field(path: Path, leaf_field: str) -> int | None:
     """Best-effort: find the first line containing the leaf field name as a key.
 
@@ -108,14 +171,18 @@ def detect_secret_leak(
 ) -> Iterable[Finding]:
     log.info("[secret_leak] scanning server=%s file=%s", server.name, server.source_file)
 
-    # Some fields are noisy and definitionally not secrets — skip.
+    # Only fields that definitionally carry no secret are skipped. ``args``
+    # IS scanned (real configs pass tokens as ["--token", "ghp_..."]); ``url``
+    # gets a dedicated structural check below instead of the generic walk.
     raw = dict(server.raw)
-    for noisy in ("command", "args", "transport", "type", "url"):
+    for noisy in ("command", "transport", "type"):
         raw.pop(noisy, None)
+    url_value = raw.pop("url", None)
 
     matches = list(_walk("", raw))
+    matches.extend(_check_url(url_value))
     for field_path, pattern_name, char_count in matches:
-        leaf = field_path.split(".")[-1].split("[")[0]
+        leaf = field_path.split(".")[-1].split("[")[0].split("?")[0]
         line_no = _line_number_of_field(server.source_file, leaf)
         log.info(
             "[secret_leak] HIT server=%s field=%s pattern=%s chars=%d line=%s",

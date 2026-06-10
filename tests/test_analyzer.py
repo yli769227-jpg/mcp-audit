@@ -35,8 +35,23 @@ def test_secret_leak_fires_on_leaky_fixture():
     assert "github" in rules_hit, [f.server for f in findings]
     assert "openai-bridge" in rules_hit, [f.server for f in findings]
     assert "internal-api" in rules_hit, [f.server for f in findings]
-    # All three must be CRITICAL.
+    assert "args-and-url-leaker" in rules_hit, [f.server for f in findings]
+    # All must be CRITICAL.
     assert all(f.severity == Severity.CRITICAL for f in findings if f.rule == "secret_leak")
+
+
+def test_secret_leak_fires_on_args_and_url():
+    """Tokens passed via args and credentials embedded in url must be caught."""
+    cf = parse_config_file(FIXTURES / "leaky" / ".mcp.json")
+    s = next(s for s in cf.servers if s.name == "args-and-url-leaker")
+    findings = list(detect_secret_leak(s, cf.servers))
+    field_paths = {f.details["field_path"] for f in findings}
+    # args token caught by the generic walk
+    assert any(fp.startswith("args[") for fp in field_paths), field_paths
+    # url userinfo + sensitive query param caught by the dedicated url check
+    assert "url" in field_paths, field_paths
+    assert "url?apikey" in field_paths, field_paths
+    assert all(f.severity == Severity.CRITICAL for f in findings)
 
 
 def test_secret_leak_does_not_print_secret_value():
@@ -50,13 +65,43 @@ def test_secret_leak_does_not_print_secret_value():
         "ghp_FIXTUREabc123DEF456ghi789JKL012mn01",
         "sk-proj-FIXTUREaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "eyJhbGciOiJIUzI1NiJ9.fakefakefakefakefake.signaturepartheretoo",
+        "ghp_FIXTUREargsTOKEN999aaaBBBcccDDDee02",
+        "FIXTUREurlPass123456",
+        "FIXTUREqueryKEY42abcdef",
     ]
     for needle in leaked_substrings:
         assert needle not in raw_text, f"secret leaked to output: {needle}"
 
 
 def test_secret_leak_does_not_fire_on_clean_fixture():
+    """Clean fixture includes ${MY_API_KEY} and the long
+    ${PRODUCTION_API_KEY_2026} placeholder in a secret-named field —
+    env-var references are the recommended style and must never be flagged."""
     cf = parse_config_file(FIXTURES / "clean" / ".mcp.json")
+    findings = []
+    for s in cf.servers:
+        findings.extend(detect_secret_leak(s, cf.servers))
+    assert findings == [], findings
+
+
+def test_secret_leak_ignores_env_var_references(tmp_path: Path):
+    """${VAR} and bare $VAR references in secret-named fields are not leaks."""
+    fixture = tmp_path / ".mcp.json"
+    fixture.write_text(
+        json.dumps({
+            "mcpServers": {
+                "placeholder-user": {
+                    "command": "x",
+                    "env": {
+                        "TOKEN": "${PRODUCTION_API_KEY_2026_V2}",
+                        "SECRET": "$ANOTHER_LONG_KEY_REFERENCE_2026",
+                    },
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+    cf = parse_config_file(fixture)
     findings = []
     for s in cf.servers:
         findings.extend(detect_secret_leak(s, cf.servers))
@@ -66,23 +111,35 @@ def test_secret_leak_does_not_fire_on_clean_fixture():
 # ---------- permission_scope ----------
 
 @pytest.mark.parametrize(
-    "server_name,should_fire",
+    "server_name,expected_severity",
     [
-        ("wide-open", True),
-        ("wide-open-list", True),
-        ("missing-allowed-tools", True),
-        ("scoped-ok", False),
+        ("wide-open", Severity.WARN),
+        ("wide-open-list", Severity.WARN),
+        # 'allowed_tools' is an mcp-audit extension convention, not an
+        # official Claude Code field — absence is INFO, not WARN, so that
+        # `--fail-on warn` CI gates don't fail on every real-world server.
+        ("missing-allowed-tools", Severity.INFO),
+        ("scoped-ok", None),
     ],
 )
-def test_permission_scope(server_name: str, should_fire: bool):
+def test_permission_scope(server_name: str, expected_severity: Severity | None):
     cf = parse_config_file(FIXTURES / "wildcard" / ".mcp.json")
     s = next(s for s in cf.servers if s.name == server_name)
     findings = list(detect_permission_scope(s, cf.servers))
-    if should_fire:
+    if expected_severity is not None:
         assert findings, f"expected finding for {server_name}"
-        assert findings[0].severity == Severity.WARN
+        assert findings[0].severity == expected_severity
     else:
         assert findings == [], findings
+
+
+def test_permission_scope_missing_field_message_notes_extension():
+    """The INFO message must clarify allowed_tools is not an official field."""
+    cf = parse_config_file(FIXTURES / "wildcard" / ".mcp.json")
+    s = next(s for s in cf.servers if s.name == "missing-allowed-tools")
+    findings = list(detect_permission_scope(s, cf.servers))
+    assert findings
+    assert "not an official Claude Code config field" in findings[0].message
 
 
 # ---------- dormant ----------
@@ -143,6 +200,8 @@ def test_overlap_fires_across_files(tmp_path: Path):
     assert len(findings) == 1, findings  # only first occurrence emits
     assert findings[0].severity == Severity.WARN
     assert findings[0].server == "foo"
+    # Claude Code precedence for same-named servers is local > project > user.
+    assert "local > project > user" in findings[0].message, findings[0].message
 
 
 def test_overlap_silent_when_unique(tmp_path: Path):

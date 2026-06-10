@@ -57,13 +57,17 @@ mcp-audit scan --path ./demo-project
 │ ✗ CRITICAL  │ secret_leak       │ legacy-bot    │ possible hard-coded credential in field      │
 │             │                   │               │ 'env.AUTH' (bearer_token, 84 chars).         │
 │ ! WARN      │ overlap           │ github        │ server 'github' is defined in 2 places. The  │
-│             │                   │               │ narrower scope (project) wins; the others    │
-│             │                   │               │ are shadowed and silently ignored.           │
+│             │                   │               │ higher-precedence scope (local > project >   │
+│             │                   │               │ user) wins; the others are shadowed and      │
+│             │                   │               │ silently ignored.                            │
 │ ! WARN      │ permission_scope  │ legacy-bot    │ 'allowed_tools' contains '*' — all tools     │
 │             │                   │               │ allowed. Consider listing only the tools     │
 │             │                   │               │ you actually use.                            │
-│ ! WARN      │ permission_scope  │ filesystem    │ no 'allowed_tools' field set — every tool    │
-│             │                   │               │ the server advertises is callable.           │
+│ i INFO      │ permission_scope  │ filesystem    │ no 'allowed_tools' field set — every tool    │
+│             │                   │               │ the server advertises is callable. Note:     │
+│             │                   │               │ 'allowed_tools' is an mcp-audit extension    │
+│             │                   │               │ convention, not an official Claude Code      │
+│             │                   │               │ config field.                                │
 │ ! WARN      │ dormant           │ legacy-bot    │ server appears dormant: last activity 412    │
 │             │                   │               │ days ago (signal: config.last_used).         │
 │             │                   │               │ Consider removing if unused.                 │

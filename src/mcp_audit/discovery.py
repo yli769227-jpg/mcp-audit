@@ -1,8 +1,8 @@
 """Find MCP config files on disk.
 
-Hard rule: we ONLY look in ``~/.claude/`` and the explicit ``cwd`` argument
-(plus up to 5 ancestor dirs of cwd). We never read ``~/.ssh/``, ``~/.aws/``,
-etc. — see CLAUDE.md / project spec.
+Hard rule: we ONLY look in ``~/.claude/``, ``~/.claude.json`` and the
+explicit ``cwd`` argument (plus up to 5 ancestor dirs of cwd). We never read
+``~/.ssh/``, ``~/.aws/``, etc. — see CLAUDE.md / project spec.
 """
 
 from __future__ import annotations
@@ -46,6 +46,15 @@ def discover_configs(start: Path | None = None) -> list[Path]:
     The returned list is deduplicated and sorted for deterministic output.
     """
     found: set[Path] = set()
+
+    # ----- User-level: ~/.claude.json -----
+    # Claude Code writes user-scope mcpServers at the top level of this file
+    # and local-scope ones under projects.<abs-path>.mcpServers. The parser
+    # extracts only those two spots and ignores everything else in the file.
+    home_claude_json = Path.home() / ".claude.json"
+    if home_claude_json.is_file():
+        log.info("[discovery] found user config: %s", home_claude_json)
+        found.add(home_claude_json.resolve())
 
     # ----- User-level: ~/.claude/ -----
     home_claude = Path.home() / ".claude"
